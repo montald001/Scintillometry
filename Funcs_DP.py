@@ -14,6 +14,10 @@ from scipy.interpolate import interp1d
 from scipy.ndimage import gaussian_filter1d
 from scintools2.scintools.ththmod import fft_axis, ext_find
 
+import os
+from datetime import datetime
+from scintools2.scintools.dynspec import BasicDyn, Dynspec
+
 import ththmod as THTH
 
 def dynamic_spectrum_extractor( day ):
@@ -679,3 +683,89 @@ def param_space_array(Astor, dstor, spacing):
         ps_arr += [np.linspace(dstor[i][0], dstor[i][1], n_integers+2)[1:-1]]
         
     return ps_arr
+
+def meerkat_data_extractor( folder_path ):
+    """
+    Function to extract a list containing all observations given by folders
+    1, 2, 3, 4 as taken from meerkat data
+    
+    takes folder path all the osbervations are taken
+    """
+
+    # Function to get folder names that have subfolders 1234 and sort them in those groups
+    def get_subfolder_names(folder_path):
+        return [name for name in os.listdir(folder_path) if os.path.isdir(os.path.join(folder_path, name))]
+
+    # Root folder path
+    root_folder = '/fs/lustre/scratch/montalvo/meerkat/Obs'
+
+    # Initialize lists for each subfolder number
+    subfolder_lists = {1: [], 2: [], 3: [], 4: []}
+
+    # Iterate over all folders in the root folder
+    for date_folder in os.listdir(root_folder):
+        date_folder_path = os.path.join(root_folder, date_folder)
+
+        # Check if the path is a directory
+        if os.path.isdir(date_folder_path):
+            # Check for the presence of subfolders 1, 2, 3, 4
+            subfolders = get_subfolder_names(date_folder_path)
+            for subfolder_num in [1, 2, 3, 4]:
+                if str(subfolder_num) in subfolders:
+                    subfolder_lists[subfolder_num].append(date_folder)
+
+    #function to sort the dates in ascending order
+    sorted_1234 = []
+    for i in range(len(subfolder_lists)):
+
+        # Convert folder_names to datetime objects
+        dates_tmp = [datetime.strptime(date_str, '%Y-%m-%d-%H:%M:%S') for date_str in subfolder_lists[i+1]]
+
+        # Sort the datetime objects
+        sorted_dates_tmp = sorted(dates_tmp)
+
+        # Convert sorted datetime objects back to strings
+        sorted_1234 += [[date.strftime('%Y-%m-%d-%H:%M:%S') for date in sorted_dates_tmp]]
+
+    ## function to group dates inside the subfolders 1234 into events on a single day
+    full_sorted = []
+    for i in range(len(sorted_1234)):
+        date_groups_tmp = {}
+
+        for folder_name in sorted_1234[i]:
+            date = datetime.strptime(folder_name, '%Y-%m-%d-%H:%M:%S')
+            date_key = date.strftime('%Y-%-m-%-d')  # Convert date_key to string format 'YYYY-M-D'
+            if date_key in date_groups_tmp:
+                date_groups_tmp[date_key].append(folder_name)
+            else:
+                date_groups_tmp[date_key] = [folder_name]
+
+        full_sorted += [date_groups_tmp]
+        
+    return full_sorted
+
+
+def meerk_dyn_sticher(full_sorted, band_index, key_obs):
+    """
+    Function to stitch together several observations and return a time array, dynamic spectrum, and frequency array
+    
+    
+    """
+    dyn_path = ('/fs/lustre/scratch/montalvo/meerkat/Obs/' 
+       + full_sorted[band_index-1][key_obs][0] 
+        + '/' + str(band_index) + '/J0737-3039A_' + full_sorted[band_index-1][key_obs][0] + '_zap.ar.dynspec')
+
+    dyn = Dynspec(
+    filename=dyn_path, process=False, verbose = False
+    )
+
+    for i in range( 1, len( full_sorted[band_index-1][key_obs] ) ):
+        dyn_path = ('/fs/lustre/scratch/montalvo/meerkat/Obs/' 
+           + full_sorted[band_index-1][key_obs][i] 
+            + '/' + str(band_index) + '/J0737-3039A_' + full_sorted[band_index-1][key_obs][i] + '_zap.ar.dynspec')
+        dyn_tmp = Dynspec(
+            filename=dyn_path, process=False, verbose = False
+            )
+        dyn += dyn_tmp
+    
+    return dyn.times * u.s.to(u.hour) * u.hour, dyn.dyn, dyn.freqs * u.MHz, dyn.mjd
