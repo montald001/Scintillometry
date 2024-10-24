@@ -3,6 +3,7 @@
 
 # In[ ]:
 
+
 import astropy.units as u
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,13 +13,16 @@ from scipy.optimize import curve_fit
 import astropy.constants as const
 from scipy.interpolate import interp1d
 from scipy.ndimage import gaussian_filter1d
-from scintools2.scintools.ththmod import fft_axis, ext_find
 
 import os
 from datetime import datetime
-from scintools2.scintools.dynspec import BasicDyn, Dynspec
 
-import ththmod as THTH
+# from scintools.scintools.dynspec import BasicDyn, Dynspec
+# from scintools.scintools.ththmod import fft_axis, ext_find
+
+from scintools.dynspec import BasicDyn, Dynspec
+from scintools.ththmod import fft_axis, ext_find
+
 
 def dynamic_spectrum_extractor( day ):
     '''
@@ -513,13 +517,14 @@ def resampler( lensPos, dyn, ds):
 
     
     #creating a storage resampled dynamic spectrum
-    dyn_new = np.zeros((dyn.shape[0], len(position_res)))
+    dyn_new = np.zeros((dyn.shape[0], len(position_res)), dtype = dyn.dtype)
     
     #loop to create the new dynamic spectra
     for i in range(len(position_res)):
         
         #create a column temp variable to add every piece of the dyncamic spectrum
-        col_tmp = np.zeros((dyn.shape[0],1))
+        #col_tmp = np.zeros((dyn.shape[0],1))
+        col_tmp = np.zeros_like( dyn[:,0:1] )
         
         for j in range(len(info_array[i])):
 
@@ -769,3 +774,86 @@ def meerk_dyn_sticher(full_sorted, band_index, key_obs):
         dyn += dyn_tmp
     
     return dyn.times * u.s.to(u.hour) * u.hour, dyn.dyn, dyn.freqs * u.MHz, dyn.mjd
+
+
+def Ado_projection_unitless(t, nu, phase, A, do):
+    """
+    t has to be unitless in hour, 
+    phase in radian
+    nu in radian
+    Function to use the A, delta coefficients from the 
+    projected position:
+    r(t) = A Omega_A t + f(v) cos(theta + delta) 
+    with theta being the orbital phase
+    
+    """
+    #orbital period
+    Pb = 0.10225156248 * u.day
+    factor = (1 / Pb.to(u.hour)).value
+    
+    ##Eccentricity
+    ecc=0.0877775
+    
+    #orbital inclination
+    #Kramer
+    ip = 87.82970787 * u.deg
+    
+    #Rickett
+    #ip = 89.35 * u.deg
+    #ip = 90.65 * u.deg
+    
+    
+    # f(v), amplitude, and delta
+    fv = (1 - ecc**2) / (1 + ecc* np.cos(nu))
+    amp = np.sqrt( np.cos(do)**2 + np.sin(do)**2 * np.cos(ip)**2 )
+    delta = np.arctan( np.tan(do) * np.cos(ip) )
+    
+    
+    #cosine and sine parts of cos(theta + delta)
+    cosx = fv * amp * np.cos(phase) * np.cos(delta ) 
+    sinx = fv * amp * np.sin(phase) * np.sin(delta ) 
+    
+    
+    proj = ( A * factor * t + (cosx - sinx) )
+    
+    return proj - proj[0]
+
+def Ado_overlap(peaks, peak_widths, t, nu, phase, A, do):
+    """
+    Function to compute if the given value of delta is permited for a given 
+    value of A given the roots of velocity must align with peaks
+    peaks indicate the locations of the turning points 
+    and peak_widths indicate their range of validity
+    """
+    pos = Ado_projection_unitless(t = t, nu = nu, phase = phase, A = A, do = do)
+    velo = np.gradient( pos, t )
+    zeros0 = find_zero_crossings_indices(velo)
+    
+    if len(zeros0) == len(peaks):
+    
+        logic_values = np.abs( t[zeros0] - peaks ) <= peak_widths
+        
+        return np.all(logic_values)
+    else:
+        return False
+
+def Ado_overlap_finder(peaks, peak_widths, t, nu, phase, A, crange):
+
+    cmin = 0
+    cmax = 0
+
+    cstorage = []
+    
+    cunit = crange.unit
+    
+    crange_u = crange.value
+
+    for i in range(len(crange)):
+        if Ado_overlap(peaks = peaks, peak_widths = peak_widths, t = t, nu = nu, phase = phase, A = A, do = crange[i]) == True:
+            cstorage += [crange_u[i]]
+
+    if len(cstorage) > 1:
+        cmin = np.min( np.array(cstorage))
+        cmax = np.max( np.array(cstorage))
+
+    return (cmin, cmax)

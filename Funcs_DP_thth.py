@@ -12,12 +12,16 @@ from scipy.optimize import curve_fit
 import astropy.constants as const
 from scipy.interpolate import interp1d
 from scipy.ndimage import gaussian_filter1d
-from scintools2.scintools.ththmod import fft_axis, ext_find
 
 from Funcs_DP import *
 
-import scintools2.scintools.ththmod as thth
-from scintools2.scintools.dynspec import BasicDyn, Dynspec
+# import scintools.scintools.ththmod as thth
+# from scintools.scintools.dynspec import BasicDyn, Dynspec
+# from scintools.scintools.ththmod import fft_axis, ext_find
+
+import scintools.ththmod as thth
+from scintools.dynspec import BasicDyn, Dynspec
+from scintools.ththmod import fft_axis, ext_find
 
 
 def result_interpreter( ththresults, sample_datas):

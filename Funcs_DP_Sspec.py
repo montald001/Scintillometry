@@ -12,9 +12,11 @@ from scipy.optimize import curve_fit
 import astropy.constants as const
 from scipy.interpolate import interp1d
 from scipy.ndimage import gaussian_filter1d
-from scintools2.scintools.ththmod import fft_axis, ext_find
 from scipy.signal import convolve2d
 from scipy.stats import norm
+
+# from scintools.scintools.ththmod import fft_axis, ext_find
+from scintools.ththmod import fft_axis, ext_find
 
 from Funcs_DP import *
 from Funcs_DP_Orbsim import *
@@ -217,6 +219,95 @@ def iterator_similar_regions( sections_array0, dyn20, t0, nu0, freq0,
         grand_CS0 += [local_CS0]
         
     return [grand_t0, grand_dyn0, grand_fd0, grand_CS0, grand_delt0, res_tau0]
+
+
+def iterator_similar_regions_Ado( sections_array0, dyn20, t0, nu0, freq0, 
+                             phase0, A_mutipliers_array0, phase_storage0, 
+                             delt0):
+    
+    """
+    Function to compute the resampled 
+    time (position in Mm rescaled by 1e4/c) grand_t0, 
+    dynspec grand_dyn0, 
+    doppler shift grand_fd0, 
+    conjugate spectrum grand_CS0, 
+    minimal stepsize for all parametes grand_delt0, 
+    differential delay res_tau0
+    
+    for the regions that overlap in position given sections_array0
+    for all the params A and delta given by A_multipliers_array0 and phase_storage0
+    """
+    
+    #defining variable arrays to store all the resmapled params
+    grand_t0 =[]
+    grand_dyn0 =[]
+    grand_fd0 = []
+    grand_CS0 = []
+    grand_delt0 = []
+
+
+    for ok in range(len(A_mutipliers_array0)):
+
+        
+        local_t0 =[]
+        local_dyn0 = []
+        local_fd0 = []
+        local_CS0 = []
+
+        for dj in range(len(phase_storage0[ok])):
+
+            #getting the position information directly from given parameters
+            #----------------------------------------------------------------------------------------
+
+            lensPos0 = Ado_projection_unitless(t = t0.to(u.hour).value,
+                                           nu = nu0.value.astype(np.float64),
+                                           phase = phase0.value.astype(np.float64), 
+                                           A = A_mutipliers_array0[ok] , 
+                                           do = phase_storage0[ok][dj] ) * 100 * u.Mm
+
+            #getting the indeces for the peaks+troughs+first/last points for the position on the screen
+            idx, idx2 = peaks(lensPos0)
+
+
+            #get the indeces of the different split regions
+            #without last point included
+            idx3 = generate_n_minus_1_x_2_array(idx2)        
+
+
+            #doing the resampling
+            #----------------------------------------------------------------------------------------
+
+            #set the position array
+            y0 = (lensPos0.value) * u.Mm
+
+            #set the separation for resampling array
+            delt_tmp = np.min( np.abs( np.diff( y0.value ) ) ) 
+            
+            #storing the smallest stepsize to resample
+            grand_delt0 += [delt_tmp]
+
+            #resample and compute conjugate variables
+            res_t0, res_pos0, res_dyn0, res_tau0, res_fd0, res_CS0, res_ts0, res_dyns0, res_fds0, res_CSs0  = regions_resampler_same_regions(
+                                                                                                  idx = idx3, 
+                                                                                                  lensPos = y0, 
+                                                                                                  delt = delt0, 
+                                                                                                  dyn = dyn20, 
+                                                                                                  freq = freq0,
+                                                                                                  sections = sections_array0
+                                                                                                    )
+            local_t0 += [res_ts0]
+            local_dyn0 += [res_dyns0]
+            local_fd0 += [res_fds0]
+            local_CS0 += [res_CSs0]
+
+                
+        grand_t0 += [local_t0]
+        grand_dyn0 += [local_dyn0]
+        grand_fd0 += [local_fd0]
+        grand_CS0 += [local_CS0]
+        
+    return [grand_t0, grand_dyn0, grand_fd0, grand_CS0, grand_delt0, res_tau0]
+
 
 
 def similar_region_equalizer(data_t, data_dyn, data_freq, sections):
